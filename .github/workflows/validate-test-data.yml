@@ -26,6 +26,13 @@ jobs:
           repository: KolbyML/Mangatan
           path: mangatan
 
+      # --- FIX: Install NASM for AVIF compilation ---
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm
+      # ----------------------------------------------
+
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
@@ -33,13 +40,13 @@ jobs:
 
       - name: Inject Validation Test Script
         run: |
-          # --- FIX: Create the directory first ---
+          # Create directory structure first
           mkdir -p mangatan/crates/ocr-server/tests
           
           cat << 'EOF' > mangatan/crates/ocr-server/tests/validate_submission.rs
           use std::fs;
           use std::path::Path;
-          use mangatan_ocr_server::logic::{self, RawChunk, OcrResult};
+          use mangatan_ocr_server::logic::{self, RawChunk};
           use serde_json::Value;
           use walkdir::WalkDir;
 
@@ -86,11 +93,6 @@ jobs:
                               let content = fs::read_to_string(&raw_path).expect("Failed to read raw.json");
                               serde_json::from_str(&content).expect("Failed to parse raw.json")
                           } else {
-                              // If raw.json is missing in the PR, this might fail if the environment
-                              // cannot hit the real Google Lens API. 
-                              // For strict validation without external dependencies, 
-                              // we might want to REQUIRE raw.json to be present.
-                              // For now, we attempt generation.
                               println!("   -> Generating raw data from image...");
                               let image_bytes = fs::read(path).expect("Failed to read image");
                               logic::get_raw_ocr_data(&image_bytes)
@@ -106,12 +108,9 @@ jobs:
                           }
 
                           let expected_content = fs::read_to_string(&expected_path).expect("Read expected.json");
-                          // We parse as Value first to handle both strict OcrResult lists or clean lists
                           let expected_json: Value = serde_json::from_str(&expected_content).expect("Invalid JSON");
                           
                           let mut full_expected_text = String::new();
-                          
-                          // Handle array of objects
                           if let Some(arr) = expected_json.as_array() {
                               for item in arr {
                                   if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
