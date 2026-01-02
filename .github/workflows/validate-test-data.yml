@@ -26,119 +26,17 @@ jobs:
           repository: KolbyML/Mangatan
           path: mangatan
 
-      # --- FIX: Install NASM for AVIF compilation ---
       - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y nasm
-      # ----------------------------------------------
 
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
-      - name: Inject Validation Test Script
-        run: |
-          # Create directory structure first
-          mkdir -p mangatan/crates/ocr-server/tests
-          
-          cat << 'EOF' > mangatan/crates/ocr-server/tests/validate_submission.rs
-          use std::fs;
-          use std::path::Path;
-          use mangatan_ocr_server::logic::{self, RawChunk};
-          use serde_json::Value;
-          use walkdir::WalkDir;
-
-          fn is_valid_subsequence(source: &str, target: &str) -> bool {
-              let src_chars: Vec<char> = source.chars().filter(|c| !c.is_whitespace()).collect();
-              let tgt_chars: Vec<char> = target.chars().filter(|c| !c.is_whitespace()).collect();
-
-              let mut src_iter = src_chars.iter();
-              for &t in &tgt_chars {
-                  if !src_iter.any(|&s| s == t) {
-                      return false;
-                  }
-              }
-              true
-          }
-
-          #[tokio::test]
-          async fn validate_expected_is_subset_of_raw() {
-              let test_data_path = Path::new("../../../ocr-test-data");
-              
-              if !test_data_path.exists() {
-                  panic!("Test data directory not found at {:?}", test_data_path.canonicalize());
-              }
-
-              let mut errors = Vec::new();
-
-              for entry in WalkDir::new(test_data_path).into_iter().filter_map(|e| e.ok()) {
-                  let path = entry.path();
-                  
-                  if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                      if ["png", "jpg", "jpeg", "webp", "avif"].contains(&ext.to_lowercase().as_str()) {
-                          let test_name = path.file_stem().unwrap().to_str().unwrap();
-                          let expected_path = path.with_extension("expected.json");
-                          let raw_path = path.with_extension("raw.json");
-
-                          if !expected_path.exists() {
-                              println!("⚠️ Skipping {} (No expected.json)", test_name);
-                              continue;
-                          }
-
-                          println!("🔍 Validating {}...", test_name);
-
-                          let raw_chunks: Vec<RawChunk> = if raw_path.exists() {
-                              let content = fs::read_to_string(&raw_path).expect("Failed to read raw.json");
-                              serde_json::from_str(&content).expect("Failed to parse raw.json")
-                          } else {
-                              println!("   -> Generating raw data from image...");
-                              let image_bytes = fs::read(path).expect("Failed to read image");
-                              logic::get_raw_ocr_data(&image_bytes)
-                                  .await
-                                  .expect("Failed to perform OCR extraction")
-                          };
-
-                          let mut full_raw_text = String::new();
-                          for chunk in &raw_chunks {
-                              for line in &chunk.lines {
-                                  full_raw_text.push_str(&line.text);
-                              }
-                          }
-
-                          let expected_content = fs::read_to_string(&expected_path).expect("Read expected.json");
-                          let expected_json: Value = serde_json::from_str(&expected_content).expect("Invalid JSON");
-                          
-                          let mut full_expected_text = String::new();
-                          if let Some(arr) = expected_json.as_array() {
-                              for item in arr {
-                                  if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
-                                      full_expected_text.push_str(text);
-                                  }
-                              }
-                          }
-
-                          if !is_valid_subsequence(&full_raw_text, &full_expected_text) {
-                              let err_msg = format!(
-                                  "❌ INVALID: '{}'. Expected text contains characters not found in Raw OCR.", 
-                                  test_name
-                              );
-                              println!("{}", err_msg);
-                              errors.push(err_msg);
-                          } else {
-                              println!("✅ {} is valid.", test_name);
-                          }
-                      }
-                  }
-              }
-
-              if !errors.is_empty() {
-                  panic!("Validation failed:\n{}", errors.join("\n"));
-              }
-          }
-          EOF
-
       - name: Run Validation Logic
         working-directory: mangatan
+        # Now we just run the test that exists in the repo
         run: cargo test --package mangatan-ocr-server --test validate_submission -- --nocapture
