@@ -17,6 +17,11 @@ Test cases are organized by folder. Each test case consists of three files:
 * Rust installed.
 
 ### Step 1: Add the Image
+
+#### Rules for Images
+* Just the text bubbles should be visible. Crop any extraneous background.
+
+
 Create a new folder (or use an existing one) and drop your image file into it.
 
 ```bash
